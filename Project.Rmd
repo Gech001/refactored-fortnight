@@ -1,0 +1,112 @@
+---
+title: "NYPD Shooting Incident Data Report"
+date: "2022-11-28"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE}
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+library(ggthemes)
+library(moderndive)
+nypd_data <- read.csv("https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD")
+nypd_data <- nypd_data %>%
+  mutate(OCCUR_DATE = mdy(OCCUR_DATE)) %>%
+  mutate(OCCUR_TIME = hms(OCCUR_TIME)) %>%
+  select(-c(Latitude,Longitude,Lon_Lat, X_COORD_CD, Y_COORD_CD, STATISTICAL_MURDER_FLAG, INCIDENT_KEY, JURISDICTION_CODE))
+```
+
+### Data Summary
+
+  The data used in this report comes from the historic NYPD Shooting Incident Data which is published quarterly by the city of New York. For the purposes of this analysis not all data was used. The goal of my analysis is to determine which areas of the city are the safest and what times of year see the most shootings in each borough. To accomplish this goal I cleaned and tidied the data.
+
+  The data I dropped includes the longitude and latitude data and the XY coordinate data. This data was found in the columns titled "Longitude," "Latitude," "Lon_Lat," "X_COORD_CD," and "Y_COORD_CD." I removed this data because my analysis will be focused at the borough level. I also removed the STATISTICAL_MURDER_FLAG, INCIDENT_KEY, and JURISDICTION_CODE columns as they were unnecessary for my analysis. Among the remaining columns, I converted the OCCUR_DATE and OCCUR_TIME columns to Date-Time objects. The location description, the race, sex, and age group of the perpetrators are all missing a significant amount of data. To compensate for this missing data, I plan to focus my analysis on the dates the shooting occur rather than the perpetrators. I will also limit my temporal analysis to individual boroughs rather than the more specific location information provided sparingly.
+
+
+```{r}
+summary(nypd_data)
+```
+
+```{r,fig.height=5}
+nypd_data %>%
+  ggplot(aes(x = BORO)) +
+  geom_bar() +
+  labs(title = "Shootings By Borough", subtitle = "From 2006 through 2021", y= "Total Shootings", x= "Borough") +
+  theme_economist() +
+  theme(plot.title = element_text(hjust = .5), axis.text.x = element_text(angle = 90), plot.subtitle = element_text(size = 12, hjust = .5), axis.title = element_text(size = 12))
+```
+
+### Shooting Incidents by Borough
+
+  When sorted by borough the total shootings are overwhelmingly in the boroughs of Brooklyn and the Bronx. Brooklyn has seen approximately 40% of the shooting incidents over the last 15 years while the Bronx has seen 29% of such incidents. On the other extreme, Staten Island has seen only 3% of the total shootings.
+  
+  At a glance this data appears to make some sense as Staten Island has the smallest population of any borough, less than a third the population of the next smallest borough. Brooklyn, by contrast, has the largest population and the most shootings. The Bronx stands out because it has the second smallest population but ranks firmly as the second highest number of shootings, indicating that the rate of shootings is disproportionate to its population.
+  
+  To understand why this is the case more data would be needed and several questions are raised. If total population alone does not explain the number of shootings in each borough, perhaps other factors might be considered. Queens has a much lower number of shootings but a similar population to Brooklyn. Queens also happens to be the largest borough by size, so a future investigation might want to look at the effects of population density on the rate of shootings. Manhattan has a comparable population as the Bronx but experiences only 13% of the total shootings. Manhattan also has a GDP almost twenty times that of the Bronx so a future investigation might also look at the effects of poverty on the rate of shootings. Other investigations might also look into the racial or political demographics of each borough to account for the disparities as well.
+
+```{r}
+nypd_data <- nypd_data %>%
+  mutate(MONTH = month.abb[month(OCCUR_DATE)])
+nypd_data$MONTH <- factor(nypd_data$MONTH, levels = month.abb)
+shoot <- count(nypd_data, MONTH)
+temps = c(39, 43, 52, 64, 72, 80, 84, 84, 76, 64, 55, 44)
+shoot <- cbind(shoot, temps)
+mod <- lm(n ~ temps, data = shoot)
+shoot <- shoot %>%
+  mutate(pred = predict(mod))
+shoot %>%
+  ggplot() +    
+  geom_point(aes(x = MONTH, y = n, color = "blue")) +
+  geom_point(aes(x = MONTH, y = pred, color = "red")) +
+  labs(title = "Shootings By Month", subtitle = "From 2006 through 2021", y= "Total Shootings", x= "Month", colour = "Legend") +
+  theme_economist() +
+  theme(axis.title = element_text(size = 12),
+        plot.title = element_text(hjust = .5),
+        plot.subtitle = element_text(size = 12, hjust = .5),
+        legend.title = element_text(size = 12),
+        legend.position = c(0, .99),
+        legend.box.background = element_rect(color = "black", size =1), 
+        legend.justification = c("left", "top"), 
+        legend.box.just = "left", legend.direction = "vertical") +
+  scale_color_discrete(labels = c("Actual", "Predicted")) +
+  scale_y_continuous(limits = c(0, 3500))
+```
+
+### Shooting Incidents by Month
+
+  When broken out by month shootings seem to rise as the temperature rises. July and August are the peak months for shooting occurrences and are the hottest months in the year in New York. February has the lowest number of shootings and is one of the coldest months of the year. To verify this intuition I created a linear model which predicted the number of shootings in a month based on its average temperature. This temperature data came from the NOAA.
+  
+  Overall the model shows a strong relationship between temperature and frequency of shooting. The model has a p-value < .01 which indicates that temperature and shootings are very likely correlated. The most extreme months of July and August at the upper end and December and January at the lower end exceed expectations indicating that people might be more temperature sensitive than this model accounts for. February, March and April all unperformed expectation and this merits further investigation. February only has 28 days while the other winter months, December and January, have 31 days, so this might be a source of the deviation.
+
+```{r, fig.width=8}
+nypd_data %>%
+  ggplot(aes(fill=BORO, x = MONTH)) +
+  geom_bar(position = "stack") +
+  labs(title = "Shootings By Month", subtitle = "From 2006 through 2021", y= "Total Shootings", x= "Month", colour = "Legend") +
+  theme_economist() +
+  theme(axis.title = element_text(size = 12),
+        plot.title = element_text(hjust = .5),
+        plot.subtitle = element_text(size = 12, hjust = .5),
+        #legend.title = element_text(size = 12),
+        legend.position = "right")
+        #legend.box.background = element_rect(color = "black", size =1), 
+        #legend.justification = c("left", "top"), 
+        #legend.box.just = "bottom")
+```
+
+### Shooting Incidents by Month (Borough Breakdown)
+  When further broken down by borough not every borough follows the same temperature influenced patterns of shootings. Brooklyn has the largest summer spikes of any borough and peaks in July while both the Bronx and Queens tend to be more stable and peak during August. Staten Island peaks during July but has its second most shootings during May. Manhattan follows the overall city trends with roughly equal numbers of shootings in both July and August, which are its peak. All of these discrepancies from the general monthly trends highlight the uniqueness of each borough.
+
+### Conclusions and Bias Identification
+  
+  All else being equal, the boroughs would be expected to experience shootings in proportion to their population size; however, the five boroughs of New York vary greatly in socioeconomic status, racial and religious demographics, and land area. Thus, the disparity in shooting frequency in the boroughs cannot be explained by population size alone and this is borne out in the data. To better understand the discrepancy each of the aforementioned factors should be examined to determine which contribute to the increase in shootings.
+    When it comes to the boroughs of New York city I have some personal bias as I have friends who tell me stories about their time living in the city. To mitigate this bias I attempted to think like a local resident of the boroughs when searching for possible sources of the discrepancies in the total shooting incidents in each borough. Another possible source of bias is from the data itself. The police presence in each borough is not the same and this means that shootings in some boroughs might be under reported. Mitigating this type of bias can be difficult as I do not have another data set to check against, but it is important to mention nonetheless. 
+  
+  Shooting incidents in New York fluctuate with the seasons. The degree of fluctuation varies within each borough, but overall they tend to hold to this trend of increasing temperatures seeing increases in shooting incidents. The warmer months tend to have more shootings than the colder months, but this is not always true. For example, February is warmer than January but experiences few shootings. April and October have the same average temperature, but October experiences almost 20% more shootings. Therefore, despite the frequency of shooting incidents being highly correlated to the temperature it is clearly not the only influential factor. More examination is needed into whether the trending of temperatures, possible influence of major holidays, or even the timing of sports seasons affect the rate at which shootings occur.
+  
+  I choose to examine the temperature impact on shooting incidents in large part because of my biases. I strongly prefer the cold of winter to the heat of summer and I have previously heard that crime tends to be higher in the summer. While my examination did find that the rate of shootings increases with temperature it also revealed that the winter months tend to exceed the predicted number of shootings based on temperature. This helped me to mitigate my bias and shape my analysis by looking into other possible causes of shootings than mere temperature. 
